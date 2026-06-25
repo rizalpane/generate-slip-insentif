@@ -263,12 +263,12 @@
             return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val);
         }
 
-        // Memuat Data Demo secara Instan
+        // Memuat Data Demo secara Instan (Dengan Komponen Sabtu)
         function loadDemoData() {
             employees = [
-                { nama: "Agus Pratama", masuk: 22, insentif: 150000, tunjangan: 600000, total: (22 * 150000) + 600000 },
-                { nama: "Siti Rahayu", masuk: 25, insentif: 150000, tunjangan: 450000, total: (25 * 150000) + 450000 },
-                { nama: "Dedi Setiawan", masuk: 18, insentif: 130000, tunjangan: 250000, total: (18 * 130000) + 250000 }
+                { nama: "Agus Pratama", masuk: 20, insentif: 150000, masuk_sabtu: 2, insentif_sabtu: 200000, tunjangan: 600000, total: (20 * 150000) + (2 * 200000) + 600000 },
+                { nama: "Siti Rahayu", masuk: 22, insentif: 150000, masuk_sabtu: 3, insentif_sabtu: 200000, tunjangan: 450000, total: (22 * 150000) + (3 * 200000) + 450000 },
+                { nama: "Dedi Setiawan", masuk: 18, insentif: 130000, masuk_sabtu: 0, insentif_sabtu: 0, tunjangan: 250000, total: (18 * 130000) + (0 * 0) + 250000 }
             ];
             
             document.getElementById('actionButtons').classList.remove('hidden');
@@ -276,7 +276,7 @@
                 <div class="text-amber-600">
                     <i class="fa-solid fa-vial text-4xl mb-3 animate-pulse"></i>
                     <p class="font-bold">Mode Simulasi Uji Coba Aktif</p>
-                    <p class="text-xs opacity-80">3 data sampel karyawan berhasil dimasukkan.</p>
+                    <p class="text-xs opacity-80">3 data sampel karyawan dengan rincian kehadiran Sabtu berhasil dimasukkan.</p>
                 </div>
             `;
             renderSlips();
@@ -302,11 +302,13 @@
                         return;
                     }
 
-                    // Deteksi Kolom Fleksibel dengan Pengecekan Precedence Spesifik
+                    // Deteksi Kolom Fleksibel dengan Kehadiran Standar & Hari Sabtu
                     employees = rows.map(row => {
                         let nama = "";
                         let masuk = 0;
                         let insentif = 0;
+                        let masuk_sabtu = 0;
+                        let insentif_sabtu = 0;
                         let tunjangan = 0;
 
                         for (let key in row) {
@@ -315,12 +317,18 @@
                             if (cleanKey === 'nama') {
                                 nama = row[key];
                             } 
-                            // Pastikan deteksi insentif dilakukan terlebih dahulu agar tidak tertukar dengan "hari"
-                            else if (cleanKey.includes('insentif') || cleanKey.includes('harian') || cleanKey.includes('rate')) {
+                            // Deteksi Sabtu (Harus didahulukan agar tidak bentrok dengan deteksi umum)
+                            else if (cleanKey.includes('sabtu') && (cleanKey.includes('insentif') || cleanKey.includes('rate') || cleanKey.includes('harian'))) {
+                                insentif_sabtu = parseFloat(row[key]) || 0;
+                            }
+                            else if (cleanKey.includes('sabtu') && (cleanKey.includes('masuk') || cleanKey.includes('kehadiran') || cleanKey.includes('hari'))) {
+                                masuk_sabtu = parseInt(row[key]) || 0;
+                            }
+                            // Deteksi Hari Biasa / Umum
+                            else if ((cleanKey.includes('insentif') || cleanKey.includes('harian') || cleanKey.includes('rate')) && !cleanKey.includes('sabtu')) {
                                 insentif = parseFloat(row[key]) || 0;
                             } 
-                            // Deteksi volume/kehadiran harian (abaikan kata "harian" agar tidak tertukar dengan kolom insentif)
-                            else if (cleanKey.includes('masuk') || cleanKey.includes('kehadiran') || (cleanKey.includes('hari') && !cleanKey.includes('harian'))) {
+                            else if ((cleanKey.includes('masuk') || cleanKey.includes('kehadiran') || (cleanKey.includes('hari') && !cleanKey.includes('harian'))) && !cleanKey.includes('sabtu')) {
                                 masuk = parseInt(row[key]) || 0;
                             } 
                             else if (cleanKey.includes('tunjangan') || cleanKey.includes('lain') || cleanKey.includes('bonus')) {
@@ -332,8 +340,10 @@
                             nama: nama || "Tanpa Nama",
                             masuk: masuk,
                             insentif: insentif,
+                            masuk_sabtu: masuk_sabtu,
+                            insentif_sabtu: insentif_sabtu,
                             tunjangan: tunjangan,
-                            total: (masuk * insentif) + tunjangan
+                            total: (masuk * insentif) + (masuk_sabtu * insentif_sabtu) + tunjangan
                         };
                     });
 
@@ -415,9 +425,14 @@
                                         </thead>
                                         <tbody class="divide-y divide-slate-100">
                                             <tr>
-                                                <td class="py-4 px-4 font-bold">Insentif Kehadiran Harian</td>
+                                                <td class="py-4 px-4 font-bold">Insentif Kehadiran Harian (Senin - Jumat)</td>
                                                 <td class="py-4 px-4 text-center">${emp.masuk} Hari</td>
                                                 <td class="py-4 px-4 text-right font-medium">${formatIDR(emp.masuk * emp.insentif)}</td>
+                                            </tr>
+                                            <tr>
+                                                <td class="py-4 px-4 font-bold text-indigo-900">Insentif Kehadiran Khusus Hari Sabtu</td>
+                                                <td class="py-4 px-4 text-center text-indigo-900 font-semibold">${emp.masuk_sabtu} Hari</td>
+                                                <td class="py-4 px-4 text-right font-medium text-indigo-900">${formatIDR(emp.masuk_sabtu * emp.insentif_sabtu)}</td>
                                             </tr>
                                             <tr>
                                                 <td class="py-4 px-4 font-bold">Tunjangan Operasional / Lainnya</td>
@@ -467,7 +482,7 @@
                                 </div>
                                 
                                 <div class="flex justify-between text-[8px] text-slate-300 font-medium italic border-t border-slate-100 pt-4">
-                                    <span>GajiGen Pro Automated Payroll System V2.0</span>
+                                    <span>GajiGen Pro Automated Payroll System V2.0 (Saturday Module Active)</span>
                                     <span>Dicetak secara sistem - Tidak memerlukan tanda tangan basah jika berstempel QR</span>
                                 </div>
                             </div>
@@ -528,14 +543,14 @@
 
         function downloadSampleTemplate() {
             const data = [
-                ["Nama", "Jumlah Masuk", "Insentif Harian", "Tunjangan Lainnya"],
-                ["Ahmad Karyawan", 22, 100000, 500000],
-                ["Siti Staff", 25, 120000, 250000]
+                ["Nama", "Jumlah Masuk", "Insentif Harian", "Masuk Sabtu", "Insentif Sabtu", "Tunjangan Lainnya"],
+                ["Ahmad Karyawan", 20, 100000, 2, 150000, 500000],
+                ["Siti Staff", 22, 120000, 1, 180000, 250000]
             ];
             const ws = XLSX.utils.aoa_to_sheet(data);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Data");
-            XLSX.writeFile(wb, "Format_Excel_GajiGen.xlsx");
+            XLSX.writeFile(wb, "Format_Excel_GajiGen_Sabtu.xlsx");
         }
     </script>
 </body>
