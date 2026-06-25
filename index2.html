@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GajiGen Pro V2 - Professional Payroll System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Pengaturan Cetak Fisik */
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white !important; }
+            .slip-page {
+                box-shadow: none !important;
+                border: none !important;
+                margin: 0 !important;
+                padding: 15mm 15mm !important;
+                width: 210mm !important;
+                height: 297mm !important;
+            }
+        }
+
+        /* Desain Kertas A4 Presisi Tinggi */
+        .slip-page {
+            background: white;
+            box-sizing: border-box;
+            width: 210mm;
+            height: 296mm; /* Menggunakan 296mm untuk toleransi margin render agar tidak meluap */
+            padding: 20mm;
+            margin: 0 auto;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between; /* Memaksa footer tetap berada di paling bawah */
+            transition: all 0.2s ease;
+        }
+
+        /* Gaya Khusus Tampilan Layar (Pratinjau) */
+        #printableArea .slip-page {
+            margin-bottom: 2rem;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+            border-radius: 8px;
+        }
+
+        /* Gaya Khusus Saat Proses Export PDF Aktif (Menghapus semua margin/padding luar agar pas 100% A4) */
+        #printableArea.exporting {
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+        
+        #printableArea.exporting > * {
+            margin-top: 0 !important;
+            margin-bottom: 0 !important;
+        }
+
+        #printableArea.exporting .slip-page {
+            margin-bottom: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+        }
+
+        .page-break {
+            page-break-after: always !important;
+            break-after: page !important;
+        }
+
+        .terbilang-box {
+            font-family: 'JetBrains Mono', monospace;
+            background-color: #f8fafc;
+            border-left: 4px solid #1e3a8a;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+    <!-- NAVIGATION -->
+    <nav class="bg-white border-b border-slate-200 sticky top-0 z-50 no-print">
+        <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <div class="bg-blue-700 p-2 rounded-lg text-white">
+                    <i class="fa-solid fa-file-invoice-dollar text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-black text-slate-900 tracking-tighter uppercase">GajiGen <span class="text-blue-600">Pro V2</span></h1>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="downloadSampleTemplate()" class="text-xs font-bold text-blue-600 hover:text-blue-800 transition-all uppercase tracking-widest">
+                    <i class="fa-solid fa-download mr-1"></i> Format Excel
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+            
+            <!-- SIDEBAR SETTINGS (no-print) -->
+            <div class="lg:col-span-1 space-y-6 no-print">
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+                    <h3 class="text-sm font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                        <i class="fa-solid fa-sliders"></i> Konfigurasi
+                    </h3>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Nama Instansi/PT</label>
+                            <input id="ptNameInput" type="text" value="PT. SAKURA PRADANA PARIK GUNA" oninput="liveUpdate()" class="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Alamat Kantor</label>
+                            <textarea id="ptAddressInput" oninput="liveUpdate()" class="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none h-20">Jl. Raya Industri Utama No. 88, Kawasan Tekno, Jakarta</textarea>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="text-[10px] font-bold text-slate-500 uppercase">Jenis Pembayaran</label>
+                                <select id="paymentTypeInput" onchange="liveUpdate()" class="w-full mt-1 px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none">
+                                    <option value="SLIP GAJI">SLIP GAJI</option>
+                                    <option value="PEMBAYARAN INSENTIF">INSENTIF</option>
+                                    <option value="BONUS TAHUNAN">BONUS</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-slate-500 uppercase">Metode</label>
+                                <select id="paymentMethodInput" onchange="liveUpdate()" class="w-full mt-1 px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none">
+                                    <option value="Transfer Bank (Autodebit)">TRANSFER</option>
+                                    <option value="Tunai / Cash">TUNAI</option>
+                                </select>
+                            </div>
+                        </div>
+                        <hr class="border-slate-100">
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Kepala / Direktur</label>
+                            <input id="headNameInput" type="text" value="Ir. H. Ahmad Fauzi, MBA" oninput="liveUpdate()" class="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none">
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Akuntan / Finance</label>
+                            <input id="accNameInput" type="text" value="Siti Rahmawati, S.E." oninput="liveUpdate()" class="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none">
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Label Penerima</label>
+                            <select id="receiverLabelInput" onchange="liveUpdate()" class="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none">
+                                <option value="Penerima Manfaat">Penerima Manfaat</option>
+                                <option value="PIC Sekolah">PIC Sekolah</option>
+                                <option value="PIC Kader">PIC Kader</option>
+                                <option value="Insentif Relawan">Insentif Relawan</option>
+                                <option value="Karyawan">Karyawan</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MAIN CONTENT AREA -->
+            <div class="lg:col-span-3 space-y-6">
+                
+                <!-- IMPORT AREA (no-print) -->
+                <div class="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm no-print text-center">
+                    <!-- Input File Tersembunyi berada di luar dropzone -->
+                    <input type="file" id="excelFile" accept=".xlsx, .xls" class="hidden" onchange="handleFileSelect(event)">
+                    
+                    <div id="dropZone" onclick="document.getElementById('excelFile').click()" class="border-2 border-dashed border-slate-200 rounded-2xl p-10 hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer group">
+                        <div class="space-y-4">
+                            <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-cloud-arrow-up text-2xl"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-slate-700">Impor Data Karyawan</h4>
+                                <p class="text-sm text-slate-400 mt-1">Seret file Excel Anda ke sini atau klik untuk memilih file</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="actionButtons" class="hidden mt-6 flex flex-wrap justify-center gap-3 animate-fade-in">
+                        <button onclick="processAndGenerate()" id="btnProcess" class="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all">
+                            <i class="fa-solid fa-wand-magic-sparkles mr-2"></i> PROSES SEKARANG
+                        </button>
+                        <button onclick="exportToPDF()" id="btnDownload" class="px-6 py-3 bg-green-600 text-white rounded-xl font-bold text-sm hover:bg-green-700 shadow-lg shadow-green-200 transition-all">
+                            <i class="fa-solid fa-file-pdf mr-2"></i> UNDUH PDF MASSAL
+                        </button>
+                        <button onclick="location.reload()" class="px-6 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-200 transition-all">
+                            RESET
+                        </button>
+                    </div>
+
+                    <!-- UJI DATA INSTAN -->
+                    <div class="mt-4 pt-4 border-t border-slate-100">
+                        <button onclick="loadDemoData()" class="px-5 py-2.5 bg-amber-500 text-white rounded-xl font-bold text-xs hover:bg-amber-600 shadow-md shadow-amber-100 transition-all uppercase tracking-wider">
+                            <i class="fa-solid fa-vial mr-2"></i> Muat Data Uji Coba (Demo Tanpa Excel)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- PREVIEW CONTAINER -->
+                <div id="outputContainer" class="hidden">
+                    <div class="flex items-center justify-between mb-4 no-print px-2">
+                        <h2 class="text-lg font-black text-slate-800 uppercase tracking-tighter">Hasil Generate Slip</h2>
+                        <span class="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold" id="slipCount">0 Karyawan</span>
+                    </div>
+                    
+                    <!-- AREA PRATINJAU DENGAN HORIZONTAL SCROLL UNTUK LAYAR KECIL -->
+                    <div class="w-full overflow-x-auto pb-4">
+                        <!-- AREA INI YANG AKAN DI-EXPORT KE PDF -->
+                        <div id="printableArea" class="space-y-1 min-w-[210mm] p-1">
+                            <!-- Slip Gaji akan muncul di sini secara dinamis -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- EMPTY STATE (no-print) -->
+                <div id="emptyState" class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-20 text-center no-print">
+                    <i class="fa-solid fa-receipt text-5xl text-slate-200 mb-4"></i>
+                    <p class="text-slate-400 font-medium">Belum ada data yang diproses.<br>Gunakan tombol impor atau tombol "Muat Data Uji Coba" untuk memulai.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- SCRIPT LOGIC -->
+    <script>
+        let employees = [];
+
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if(file) {
+                document.getElementById('actionButtons').classList.remove('hidden');
+                document.getElementById('dropZone').innerHTML = `
+                    <div class="text-blue-600">
+                        <i class="fa-solid fa-file-circle-check text-4xl mb-3"></i>
+                        <p class="font-bold">${file.name}</p>
+                        <p class="text-xs opacity-60">File siap diproses. Silakan klik tombol "PROSES SEKARANG" di bawah.</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Fungsi Rekursif Terbilang presisi bebas bug pecahan desimal
+        function terbilang(n) {
+            n = Math.floor(n);
+            const bil = ["", "Satu", "Dua", "Tiga", "Empat", "Lima", "Enam", "Tujuh", "Delapan", "Sembilan", "Sepuluh", "Sebelas"];
+            if (n < 12) return " " + bil[n];
+            else if (n < 20) return terbilang(n - 10) + " Belas";
+            else if (n < 100) return terbilang(Math.floor(n / 10)) + " Puluh" + terbilang(n % 10);
+            else if (n < 200) return " Seratus" + terbilang(n - 100);
+            else if (n < 1000) return terbilang(Math.floor(n / 100)) + " Ratus" + terbilang(n % 100);
+            else if (n < 2000) return " Seribu" + terbilang(n - 1000);
+            else if (n < 1000000) return terbilang(Math.floor(n / 1000)) + " Ribu" + terbilang(n % 1000);
+            else if (n < 1000000000) return terbilang(Math.floor(n / 1000000)) + " Juta" + terbilang(n % 1000000);
+            else if (n < 1000000000000) return terbilang(Math.floor(n / 1000000000)) + " Milyar" + terbilang(n % 1000000000);
+            return "Nilai Terlalu Besar";
+        }
+
+        function formatIDR(val) {
+            return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val);
+        }
+
+        // Memuat Data Demo secara Instan
+        function loadDemoData() {
+            employees = [
+                { nama: "Agus Pratama", masuk: 22, insentif: 150000, tunjangan: 600000, total: (22 * 150000) + 600000 },
+                { nama: "Siti Rahayu", masuk: 25, insentif: 150000, tunjangan: 450000, total: (25 * 150000) + 450000 },
+                { nama: "Dedi Setiawan", masuk: 18, insentif: 130000, tunjangan: 250000, total: (18 * 130000) + 250000 }
+            ];
+            
+            document.getElementById('actionButtons').classList.remove('hidden');
+            document.getElementById('dropZone').innerHTML = `
+                <div class="text-amber-600">
+                    <i class="fa-solid fa-vial text-4xl mb-3 animate-pulse"></i>
+                    <p class="font-bold">Mode Simulasi Uji Coba Aktif</p>
+                    <p class="text-xs opacity-80">3 data sampel karyawan berhasil dimasukkan.</p>
+                </div>
+            `;
+            renderSlips();
+        }
+
+        function processAndGenerate() {
+            const fileInput = document.getElementById('excelFile');
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert('Silakan pilih atau seret file Excel terlebih dahulu.');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const rows = XLSX.utils.sheet_to_json(sheet);
+
+                    if (rows.length === 0) {
+                        alert('File Excel kosong atau tidak terbaca.');
+                        return;
+                    }
+
+                    // Deteksi Kolom Fleksibel dengan Pengecekan Precedence Spesifik
+                    employees = rows.map(row => {
+                        let nama = "";
+                        let masuk = 0;
+                        let insentif = 0;
+                        let tunjangan = 0;
+
+                        for (let key in row) {
+                            const cleanKey = key.trim().toLowerCase();
+                            
+                            if (cleanKey === 'nama') {
+                                nama = row[key];
+                            } 
+                            // Pastikan deteksi insentif dilakukan terlebih dahulu agar tidak tertukar dengan "hari"
+                            else if (cleanKey.includes('insentif') || cleanKey.includes('harian') || cleanKey.includes('rate')) {
+                                insentif = parseFloat(row[key]) || 0;
+                            } 
+                            // Deteksi volume/kehadiran harian (abaikan kata "harian" agar tidak tertukar dengan kolom insentif)
+                            else if (cleanKey.includes('masuk') || cleanKey.includes('kehadiran') || (cleanKey.includes('hari') && !cleanKey.includes('harian'))) {
+                                masuk = parseInt(row[key]) || 0;
+                            } 
+                            else if (cleanKey.includes('tunjangan') || cleanKey.includes('lain') || cleanKey.includes('bonus')) {
+                                tunjangan = parseFloat(row[key]) || 0;
+                            }
+                        }
+
+                        return {
+                            nama: nama || "Tanpa Nama",
+                            masuk: masuk,
+                            insentif: insentif,
+                            tunjangan: tunjangan,
+                            total: (masuk * insentif) + tunjangan
+                        };
+                    });
+
+                    renderSlips();
+                } catch (err) {
+                    console.error(err);
+                    alert('Gagal memproses file Excel. Pastikan format tabel sudah sesuai.');
+                }
+            };
+            reader.readAsArrayBuffer(fileInput.files[0]);
+        }
+
+        function renderSlips() {
+            const container = document.getElementById('printableArea');
+            container.innerHTML = '';
+            
+            const ptName = document.getElementById('ptNameInput').value;
+            const ptAddr = document.getElementById('ptAddressInput').value;
+            const payType = document.getElementById('paymentTypeInput').value;
+            const payMethod = document.getElementById('paymentMethodInput').value;
+            const headName = document.getElementById('headNameInput').value;
+            const accName = document.getElementById('accNameInput').value;
+            const receiverLabel = document.getElementById('receiverLabelInput').value;
+
+            employees.forEach((emp, empIdx) => {
+                const versions = ["ARSIP PERTINGGAL", "SALINAN PENERIMA"];
+                
+                versions.forEach((ver, verIdx) => {
+                    // Penanda halaman terakhir yang akurat untuk menghindari spasi kosong berlebih
+                    const isLast = (empIdx === employees.length - 1) && (verIdx === versions.length - 1);
+                    const pageBreakClass = isLast ? "" : "page-break";
+
+                    const slipHtml = `
+                        <div class="slip-page ${pageBreakClass}">
+                            <!-- BAGIAN ATAS: Identitas Perusahaan -->
+                            <div>
+                                <div class="flex justify-between items-start border-b-4 border-blue-900 pb-6 mb-8">
+                                    <div>
+                                        <h2 class="text-2xl font-black text-blue-900 leading-none mb-2">${ptName}</h2>
+                                        <p class="text-xs text-slate-500 max-w-sm">${ptAddr}</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="inline-block bg-blue-900 text-white px-4 py-1 text-xs font-bold tracking-widest rounded-full mb-2">${payType}</div>
+                                        <p class="text-[10px] font-black text-blue-600 italic tracking-tighter">${ver}</p>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-10 mb-8 text-sm">
+                                    <div class="space-y-2">
+                                        <div class="flex justify-between border-b border-slate-100 py-1">
+                                            <span class="text-slate-400 font-bold uppercase text-[10px]">Nama Penerima</span>
+                                            <span class="font-bold text-slate-800">${emp.nama}</span>
+                                        </div>
+                                        <div class="flex justify-between border-b border-slate-100 py-1">
+                                            <span class="text-slate-400 font-bold uppercase text-[10px]">Tanggal Cetak</span>
+                                            <span class="font-medium text-slate-800">${new Date().toLocaleDateString('id-ID')}</span>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <div class="flex justify-between border-b border-slate-100 py-1">
+                                            <span class="text-slate-400 font-bold uppercase text-[10px]">Metode Bayar</span>
+                                            <span class="font-bold text-blue-700">${payMethod}</span>
+                                        </div>
+                                        <div class="flex justify-between border-b border-slate-100 py-1">
+                                            <span class="text-slate-400 font-bold uppercase text-[10px]">Status</span>
+                                            <span class="text-green-600 font-black">PAID / LUNAS</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-8">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-slate-100 text-slate-600">
+                                            <tr>
+                                                <th class="py-3 px-4 text-left rounded-l-xl uppercase text-[10px] tracking-widest">Deskripsi Komponen</th>
+                                                <th class="py-3 px-4 text-center uppercase text-[10px] tracking-widest">Volume</th>
+                                                <th class="py-3 px-4 text-right rounded-r-xl uppercase text-[10px] tracking-widest">Jumlah (IDR)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-100">
+                                            <tr>
+                                                <td class="py-4 px-4 font-bold">Insentif Kehadiran Harian</td>
+                                                <td class="py-4 px-4 text-center">${emp.masuk} Hari</td>
+                                                <td class="py-4 px-4 text-right font-medium">${formatIDR(emp.masuk * emp.insentif)}</td>
+                                            </tr>
+                                            <tr>
+                                                <td class="py-4 px-4 font-bold">Tunjangan Operasional / Lainnya</td>
+                                                <td class="py-4 px-4 text-center">Flat</td>
+                                                <td class="py-4 px-4 text-right font-medium">${formatIDR(emp.tunjangan)}</td>
+                                            </tr>
+                                        </tbody>
+                                        <tfoot>
+                                            <tr class="bg-blue-50 text-blue-900">
+                                                <td colspan="2" class="py-4 px-4 text-right font-black uppercase text-xs">Total Diterima</td>
+                                                <td class="py-4 px-4 text-right font-black text-xl">${formatIDR(emp.total)}</td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+
+                                <div class="terbilang-box p-6 rounded-2xl mb-8">
+                                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Terbilang (Amount in words)</span>
+                                    <p class="text-sm font-bold text-slate-700 italic uppercase"># ${terbilang(emp.total)} RUPIAH #</p>
+                                </div>
+                            </div>
+
+                            <!-- BAGIAN BAWAH: Penandatanganan & Catatan Kaki -->
+                            <div>
+                                <div class="grid grid-cols-3 gap-8 text-center mb-8">
+                                    <div class="space-y-14">
+                                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Kepala / Direktur</p>
+                                        <div>
+                                            <p class="font-black text-slate-800 border-b-2 border-slate-800 inline-block px-4">${headName}</p>
+                                            <p class="text-[9px] text-slate-400 mt-1 uppercase">Tanda Tangan & Stempel</p>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-14">
+                                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Keuangan / Akuntan</p>
+                                        <div>
+                                            <p class="font-black text-slate-800 border-b-2 border-slate-800 inline-block px-4">${accName}</p>
+                                            <p class="text-[9px] text-slate-400 mt-1 uppercase">Verifikasi Kasir</p>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-14">
+                                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${receiverLabel}</p>
+                                        <div>
+                                            <p class="font-black text-slate-800 border-b-2 border-slate-800 inline-block px-4">${emp.nama}</p>
+                                            <p class="text-[9px] text-slate-400 mt-1 uppercase">Nama Terang Penerima</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="flex justify-between text-[8px] text-slate-300 font-medium italic border-t border-slate-100 pt-4">
+                                    <span>GajiGen Pro Automated Payroll System V2.0</span>
+                                    <span>Dicetak secara sistem - Tidak memerlukan tanda tangan basah jika berstempel QR</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    container.innerHTML += slipHtml;
+                });
+            });
+
+            document.getElementById('outputContainer').classList.remove('hidden');
+            document.getElementById('emptyState').classList.add('hidden');
+            document.getElementById('slipCount').innerText = `${employees.length} Karyawan (${employees.length * 2} Slip)`;
+        }
+
+        function liveUpdate() {
+            if(employees.length > 0) renderSlips();
+        }
+
+        function exportToPDF() {
+            const element = document.getElementById('printableArea');
+            const payType = document.getElementById('paymentTypeInput').value;
+            const btn = document.getElementById('btnDownload');
+            const originalHTML = btn.innerHTML;
+
+            btn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> MEMPROSES PDF...`;
+            btn.disabled = true;
+
+            // Tambahkan kelas penanda ekspor untuk mereset margin/padding menjadi 0
+            element.classList.add('exporting');
+
+            const opt = {
+                margin: 0,
+                filename: `Mass_PDF_${payType}_${new Date().getTime()}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { 
+                    scale: 2, 
+                    useCORS: true,
+                    scrollX: 0, 
+                    scrollY: 0
+                },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            // Jalankan konversi html2pdf
+            html2pdf().set(opt).from(element).save().then(() => {
+                // Kembalikan ke tampilan pratinjau normal setelah PDF selesai dibuat
+                element.classList.remove('exporting');
+                btn.innerHTML = originalHTML;
+                btn.disabled = false;
+            }).catch(err => {
+                console.error(err);
+                element.classList.remove('exporting');
+                btn.innerHTML = originalHTML;
+                btn.disabled = false;
+                alert('Gagal menghasilkan berkas PDF.');
+            });
+        }
+
+        function downloadSampleTemplate() {
+            const data = [
+                ["Nama", "Jumlah Masuk", "Insentif Harian", "Tunjangan Lainnya"],
+                ["Ahmad Karyawan", 22, 100000, 500000],
+                ["Siti Staff", 25, 120000, 250000]
+            ];
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Data");
+            XLSX.writeFile(wb, "Format_Excel_GajiGen.xlsx");
+        }
+    </script>
+</body>
+</html>
